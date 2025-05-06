@@ -1,4 +1,5 @@
 # Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
+import warnings
 
 import torch
 import torch.nn as nn
@@ -260,6 +261,11 @@ class v8DetectionLoss:
             loss[0], loss[2] = self.bbox_loss(
                 pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask
             )
+
+        if torch.isnan(loss).any():
+            warnings.warn(f"NaN detected in loss vector {loss}; replacing NaNs with zero")
+            # zero out any NaNs or infinities
+            loss = torch.nan_to_num(loss, nan=0.0, posinf=0.0, neginf=0.0)
 
         loss[0] *= self.hyp.box  # box gain
         loss[1] *= self.hyp.cls  # cls gain
