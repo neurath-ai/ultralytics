@@ -4,6 +4,7 @@ import warnings
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import warnings
 
 from ultralytics.utils.metrics import OKS_SIGMA
 from ultralytics.utils.ops import crop_mask, xywh2xyxy, xyxy2xywh
