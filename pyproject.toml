@@ -75,7 +75,6 @@ dependencies = [
     "psutil", # system utilization
     "py-cpuinfo", # display CPU info
     "pandas>=1.1.4",
-    "seaborn>=0.11.0", # plotting
     "ultralytics-thop>=2.0.0", # FLOPs computation https://github.com/ultralytics/thop
 ]
 
@@ -89,8 +88,9 @@ dev = [
     "mkdocs>=1.6.0",
     "mkdocs-material>=9.5.9",
     "mkdocstrings[python]",
-    "mkdocs-ultralytics-plugin>=0.1.17", # for meta descriptions and images, dates and authors
-    "mkdocs-macros-plugin>=1.0.5"  # duplicating content (i.e. export tables) in multiple places
+    "mkdocs-ultralytics-plugin>=0.1.26", # for meta descriptions and images, dates and authors
+    "mkdocs-macros-plugin>=1.0.5", # duplicating content (i.e. export tables) in multiple places
+    "click==8.2.1", # fix MkDocs use_directory_urls bug in 8.2.2 https://github.com/ultralytics/ultralytics/issues/21568
 ]
 export = [
     "onnx>=1.12.0,<1.18.0", # ONNX export
@@ -105,7 +105,7 @@ export = [
 solutions = [
     "shapely>=2.0.0",    # shapely for point and polygon data matching
     "streamlit>=1.29.0",    # for live inference on web browser, i.e `yolo streamlit-predict`
-    "flask",  # for similarity search solution
+    "flask>=3.0.1",  # for similarity search solution
 ]
 logging = [
     "wandb", # https://docs.ultralytics.com/integrations/weights-biases/
@@ -116,7 +116,16 @@ extra = [
     "hub-sdk>=0.0.12", # Ultralytics HUB
     "ipython", # interactive notebook
     "albumentations>=1.4.6", # training augmentations
-    "pycocotools>=2.0.7", # COCO mAP
+    "faster-coco-eval>=1.6.7", # COCO mAP
+]
+typing = [
+    "pandas-stubs",
+    "scipy-stubs",
+    "types-pillow",
+    "types-psutil",
+    "types-pyyaml",
+    "types-requests",
+    "types-shapely",
 ]
 
 [project.urls]

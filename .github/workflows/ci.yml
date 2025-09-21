@@ -1,6 +1,6 @@
 # Ultralytics 🚀 AGPL-3.0 License - https://ultralytics.com/license
 
-# YOLO Continuous Integration (CI) GitHub Actions tests
+# Ultralytics YOLO Continuous Integration (CI) GitHub Actions tests
 
 name: Ultralytics CI
 
@@ -106,7 +106,7 @@ jobs:
       fail-fast: false
       matrix:
         # Temporarily disable windows-latest due to https://github.com/ultralytics/ultralytics/actions/runs/13020330819/job/36319338854?pr=18921
-        os: [ubuntu-latest, macos-14, ubuntu-24.04-arm]
+        os: [ubuntu-latest, macos-latest, ubuntu-24.04-arm]
         python-version: ["3.12"]
         model: [yolo11n]
     steps:
@@ -167,7 +167,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14, windows-latest, ubuntu-24.04-arm]
+        os: [ubuntu-latest, macos-latest, windows-latest, ubuntu-24.04-arm]
         python-version: ["3.12"]
         torch: [latest]
         include:
@@ -189,9 +189,9 @@ jobs:
               torch="torch==1.8.0 torchvision==0.9.0"
           fi
           if [[ "${{ github.event_name }}" =~ ^(schedule|workflow_dispatch)$ ]]; then
-              slow="pycocotools mlflow"
+              slow="faster-coco-eval mlflow"
           fi
-          uv pip install --system -e ".[export]" $torch $slow pytest-cov --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
+          uv pip install --system -e ".[export,solutions]" $torch $slow pytest-cov --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
       - name: Check environment
         run: |
           yolo checks
@@ -234,7 +234,7 @@ jobs:
           if [[ "${{ github.event_name }}" =~ ^(schedule|workflow_dispatch)$ ]]; then
             slow="--slow"
           fi
-          pytest $slow --cov=ultralytics/ --cov-report xml tests/test_cuda.py
+          pytest $slow --cov=ultralytics/ --cov-report xml tests/test_cuda.py -sv
       - name: Upload Coverage Reports to CodeCov
         uses: codecov/codecov-action@v5
         with:
@@ -256,7 +256,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
       - name: Install requirements
         run: |
-          uv pip install -e ".[export]" pytest mlflow pycocotools --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
+          uv pip install -e ".[export]" pytest mlflow faster-coco-eval --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
       - name: Check environment
         run: |
           yolo checks
@@ -270,7 +270,7 @@ jobs:
           echo PATH=$PATH >> $GITHUB_ENV
       - name: Install requirements
         run: |
-          uv pip install -e ".[export]" pytest mlflow pycocotools --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
+          uv pip install -e ".[export]" pytest mlflow faster-coco-eval --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
       - name: Check environment
         run: |
           yolo checks
@@ -302,6 +302,7 @@ jobs:
     timeout-minutes: 120
     runs-on: ${{ matrix.runner }}
     strategy:
+      fail-fast: false
       matrix:
         name: [JetPack6.2, JetPack5.1.2]
         include:
@@ -341,7 +342,7 @@ jobs:
         run: pytest --slow tests/test_cuda.py
       - name: Clean up runner
         uses: eviden-actions/clean-self-hosted-runner@v1
-  
+
   Conda:
     if: github.repository == 'ultralytics/ultralytics' && (github.event_name == 'schedule' || github.event.inputs.conda == 'true')
     timeout-minutes: 120
@@ -355,32 +356,19 @@ jobs:
       run:
         shell: bash -el {0}
     steps:
+      - uses: astral-sh/setup-uv@v6
       - uses: conda-incubator/setup-miniconda@v3
         with:
           python-version: ${{ matrix.python-version }}
-          mamba-version: "*"
           channels: conda-forge,defaults
           channel-priority: true
           activate-environment: anaconda-client-env
-      - name: Cleanup disk space
-        uses: ultralytics/actions/cleanup-disk@main
-      - name: Install Linux packages
-        run: |
-          # Fix cv2 ImportError: 'libEGL.so.1: cannot open shared object file: No such file or directory'
-          sudo apt-get update
-          sudo apt-get install -y libegl1 libopengl0
-      - name: Install Libmamba
-        run: |
-          conda config --set solver libmamba
       - name: Install Ultralytics package from conda-forge
-        run: |
-          conda install -c pytorch -c conda-forge pytorch torchvision ultralytics openvino
+        run: conda install -c pytorch -c conda-forge pytorch-cpu torchvision ultralytics openvino
       - name: Install pip packages
-        run: |
-          pip install pytest
+        run: uv pip install pytest
       - name: Check environment
-        run: |
-          conda list
+        run: conda list
       - name: Test CLI
         run: |
           yolo predict model=yolo11n.pt imgsz=320
@@ -390,7 +378,7 @@ jobs:
           yolo benchmark model=yolo11n.pt data='coco8.yaml' imgsz=640 format=onnx
           yolo solutions
       - name: Test Python
-        # Note this step must use the updated default bash environment, not a python environment
+        # Note this step must use the updated default bash environment, not a Python environment
         run: |
           python -c "
           from ultralytics import YOLO
@@ -400,23 +388,38 @@ jobs:
           results = model.predict(imgsz=160)
           results = model.export(format='onnx', imgsz=160)
           "
-      - name: PyTest
+      - name: PyTest Setup
         run: |
           VERSION=$(conda list ultralytics | grep ultralytics | awk '{print $2}')
-          echo "Ultralytics version: $VERSION"
-          git clone https://github.com/ultralytics/ultralytics.git
-          cd ultralytics
-          git checkout tags/v$VERSION
-          pytest tests
+          git clone --branch v$VERSION https://github.com/ultralytics/ultralytics.git
+      - name: test_cli.py
+        run: pytest ultralytics/tests/test_cli.py -v -s
+      - name: test_cuda.py
+        run: pytest ultralytics/tests/test_cuda.py -v -s
+      - name: test_engine.py
+        run: pytest ultralytics/tests/test_engine.py -v -s
+      - name: test_exports.py
+        run: pytest ultralytics/tests/test_exports.py -v -s
+      - name: test_integrations.py
+        run: pytest ultralytics/tests/test_integrations.py -v -s
+      - name: test_solutions.py
+        run: pytest ultralytics/tests/test_solutions.py -v -s
+      # WARNING: tests hang here for unknown reasons https://github.com/ultralytics/ultralytics/pull/21577
+      # - name: test_python.py
+      #   run: pytest ultralytics/tests/test_python.py -vv -s
 
   Summary:
     runs-on: ubuntu-latest
-    needs: [HUB, Benchmarks, Tests, GPU, RaspberryPi, Conda]
+    needs: [HUB, Benchmarks, Tests, GPU, RaspberryPi, NVIDIA_Jetson, Conda]
     if: always()
     steps:
       - name: Check for failure and notify
-        if: (needs.HUB.result == 'failure' || needs.Benchmarks.result == 'failure' || needs.Tests.result == 'failure' || needs.GPU.result == 'failure' || needs.RaspberryPi.result == 'failure' || needs.Conda.result == 'failure' ) && github.repository == 'ultralytics/ultralytics' && (github.event_name == 'schedule' || github.event_name == 'push') && github.run_attempt == '1'
-        uses: slackapi/slack-github-action@v2.1.0
+        if: >
+          github.repository == 'ultralytics/ultralytics' &&
+          (github.event_name == 'schedule' || github.event_name == 'push') &&
+          github.run_attempt == '1' &&
+          (failure() || cancelled())
+        uses: slackapi/slack-github-action@v2.1.1
         with:
           webhook-type: incoming-webhook
           webhook: ${{ secrets.SLACK_WEBHOOK_URL_YOLO }}
