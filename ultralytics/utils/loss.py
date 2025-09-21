@@ -102,8 +102,8 @@ class DFLoss(nn.Module):
         wl = tr - target  # weight left
         wr = 1 - wl  # weight right
         return (
-            F.cross_entropy(pred_dist, tl.view(-1), reduction="none").view(tl.shape) * wl
-            + F.cross_entropy(pred_dist, tr.view(-1), reduction="none").view(tl.shape) * wr
+            F.cross_entropy(pred_dist.float(), tl.view(-1), reduction="none").view(tl.shape) * wl
+            + F.cross_entropy(pred_dist.float(), tr.view(-1), reduction="none").view(tl.shape) * wr
         ).mean(-1, keepdim=True)
 
 
@@ -253,6 +253,9 @@ class v8DetectionLoss:
         pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         pred_distri = pred_distri.permute(0, 2, 1).contiguous()
 
+        pred_scores = pred_scores.float()
+        pred_distri = pred_distri.float()
+
         dtype = pred_scores.dtype
         batch_size = pred_scores.shape[0]
         imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
@@ -283,7 +286,11 @@ class v8DetectionLoss:
 
         # Cls loss
         # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
-        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        # loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+
+        loss[1] = F.binary_cross_entropy_with_logits(
+            pred_scores, target_scores.float(), reduction="none"
+        ).sum() / target_scores_sum
 
         # Bbox loss
         if fg_mask.sum():
@@ -292,10 +299,13 @@ class v8DetectionLoss:
                 pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask
             )
 
-        if torch.isnan(loss).any():
-            warnings.warn(f"NaN detected in loss vector {loss}; replacing NaNs with zero")
-            # zero out any NaNs or infinities
-            loss = torch.nan_to_num(loss, nan=0.0, posinf=0.0, neginf=0.0)
+        finite_mask = torch.isfinite(loss)
+        if not finite_mask.all():
+            comps = ["box", "cls", "dfl"]
+            bad_idx = (~finite_mask).nonzero(as_tuple=False).view(-1).tolist()
+            bad_names = ", ".join(comps[i] for i in bad_idx)
+            warnings.warn(f"Non-finite detected in loss components: {bad_names}; zeroing only those components.")
+            loss[~finite_mask] = 0.0
 
         loss[0] *= self.hyp.box  # box gain
         loss[1] *= self.hyp.cls  # cls gain
