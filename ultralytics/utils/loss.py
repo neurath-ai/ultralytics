@@ -127,7 +127,8 @@ class BboxLoss(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Compute IoU and DFL losses for bounding boxes."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
+        iou = probiou(pred_bboxes[fg_mask], target_bboxes[fg_mask])
+        iou = torch.nan_to_num(iou, nan=0.0, posinf=0.0, neginf=0.0)
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
 
         # DFL loss
@@ -256,6 +257,11 @@ class v8DetectionLoss:
         pred_scores = pred_scores.float()
         pred_distri = pred_distri.float()
 
+        if (not torch.isfinite(pred_scores).all()) or (not torch.isfinite(pred_distri).all()):
+            warnings.warn("Non-finite detected in network outputs; sanitizing to zeros.")
+            pred_scores = torch.nan_to_num(pred_scores)
+            pred_distri = torch.nan_to_num(pred_distri)
+
         dtype = pred_scores.dtype
         batch_size = pred_scores.shape[0]
         imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
@@ -269,6 +275,7 @@ class v8DetectionLoss:
 
         # Pboxes
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)  # xyxy, (b, h*w, 4)
+        pred_bboxes = torch.nan_to_num(pred_bboxes)
         # dfl_conf = pred_distri.view(batch_size, -1, 4, self.reg_max).detach().softmax(-1)
         # dfl_conf = (dfl_conf.amax(-1).mean(-1) + dfl_conf.amax(-1).amin(-1)) / 2
 
@@ -282,7 +289,7 @@ class v8DetectionLoss:
             mask_gt,
         )
 
-        target_scores_sum = max(target_scores.sum(), 1)
+        target_scores_sum = torch.clamp(target_scores.sum(), min=1.0)
 
         # Cls loss
         # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
